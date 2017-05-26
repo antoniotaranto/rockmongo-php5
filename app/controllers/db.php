@@ -265,7 +265,16 @@ class DbController extends BaseController {
 		$this->db = xn("db");
 
 		if ($this->isPost()) {
+
+			// Input data format
 			$format = x("format");
+
+			// Do split at all
+			$split_js = x("split_js");
+			// Split by MAX lines in block
+			$split_max = x("split_max");
+			if (!$split_max) $split_max = 5000;
+
 			if (!empty($_FILES["json"]["tmp_name"])) {
 				$tmp = $_FILES["json"]["tmp_name"];
 
@@ -279,7 +288,46 @@ class DbController extends BaseController {
 
 				$ret = array("ok" => 0);
 				if ($format == "js") {
-					$ret = $this->_mongo->selectDB($this->db)->execute('function (){ ' . $body . ' }');
+
+					if ($split_js) {
+
+						$body = explode('db.getCollection(', $body);
+
+						function filter_js_chunk($item) {
+							if (strpos($item, ').insert({') !== false) {
+								return true;
+							}
+							if (strpos($item, ').ensureIndex(') !== false) {
+								return true;
+							}
+							return false;
+						}
+						$body = array_filter($body, "filter_js_chunk");
+
+						$chunks = array_chunk($body, $split_max);
+						$is_ok = true;
+						$error_str = '';
+						foreach($chunks as $body_chunk) {
+							$chunk_str = 'db.getCollection(' . implode('db.getCollection(', $body_chunk);
+							$ret = $this->_mongo->selectDB($this->db)->execute('function (){ ' . $chunk_str . ' }');
+							if (!$ret["ok"]) {
+								// This can be really big
+								$error_str .= $ret["errmsg"];
+								// So we add chunk (line) if file split by 1 line
+								if ($split_max == 1) {
+									$error_str .= '<br>Chunk with error:<br>' . PHP_EOL . $chunk_str . PHP_EOL;
+								}
+								$is_ok = false;
+							}
+						}
+						if (!$is_ok) {
+							$ret["ok"] = 0;
+							$ret["errmsg"] = $error_str;
+						}
+
+					} else {
+						$ret = $this->_mongo->selectDB($this->db)->execute('function (){ ' . $body . ' }');
+					}
 
 					if (!$ret["ok"]) {
 						$this->error = $ret["errmsg"];
