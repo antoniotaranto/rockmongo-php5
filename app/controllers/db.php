@@ -203,25 +203,10 @@ class DbController extends BaseController {
 			$this->contents =  "";
 			$this->countRows = 0;
 
-			//indexes
-			foreach ($this->selectedCollections as $collection) {
-				$collObj = $db->selectCollection($collection);
-				$infos = $collObj->getIndexInfo();
-				foreach ($infos as $info) {
-					$options = array();
-					if (isset($info["unique"])) {
-						$options["unique"] = $info["unique"];
-					}
-					$exportor = new VarExportor($db, $info["key"]);
-					$exportor2 = new VarExportor($db, $options);
-					$this->contents .= "\n/** {$collection} indexes **/\ndb.getCollection(\"" . addslashes($collection) . "\").ensureIndex(" . $exportor->export(MONGO_EXPORT_JSON) . "," . $exportor2->export(MONGO_EXPORT_JSON) . ");\n";
-				}
-			}
-
 			//data
 			foreach ($this->selectedCollections as $collection) {
 				$cursor = $db->selectCollection($collection)->find();
-				$this->contents .= "\n/** " . $collection  . " records **/\n";
+				$this->contents .= "\n/** {$collection} records **/\n";
 				foreach ($cursor as $one) {
 					$this->countRows ++;
 					$exportor = new VarExportor($db, $one);
@@ -230,6 +215,27 @@ class DbController extends BaseController {
 				}
 				unset($cursor);
 			}
+
+			//indexes
+			foreach ($this->selectedCollections as $collection) {
+				$collObj = $db->selectCollection($collection);
+				$infos = $collObj->getIndexInfo();
+				if (count($infos)) {
+					$this->contents .= "\n/** {$collection} indexes **/\n";
+				}
+				foreach ($infos as $info) {
+					$options = array();
+					if (isset($info["unique"])) {
+						$options["unique"] = $info["unique"];
+					}
+					$exportor = new VarExportor($db, $info["key"]);
+					$exportor2 = new VarExportor($db, $options);
+					$this->contents .= "db.getCollection(\"" . addslashes($collection) . "\").ensureIndex(" . $exportor->export(MONGO_EXPORT_JSON) . "," . $exportor2->export(MONGO_EXPORT_JSON) . ");\n";
+					unset($exportor);
+					unset($exportor2);
+				}
+			}
+
 			if (x("can_download")) {
 				$prefix = "mongo-" . urlencode($this->db) . "-" . date("Ymd-His");
 
